@@ -3,8 +3,8 @@ import { connect } from "cloudflare:sockets";
 // import { Buffer } from "node:buffer";
 
 // Variables
-const rootDomain = "maj.bangjdi.eu.org"; // Ganti dengan domain utama kalian
-const serviceName = "maj"; // Ganti dengan nama workers kalian
+const rootDomain = "foolvpn.me"; // Ganti dengan domain utama kalian
+const serviceName = "nautica"; // Ganti dengan nama workers kalian
 const apiKey = ""; // Ganti dengan Global API key kalian (https://dash.cloudflare.com/profile/api-tokens)
 const apiEmail = ""; // Ganti dengan email yang kalian gunakan
 const accountID = ""; // Ganti dengan Account ID kalian (https://dash.cloudflare.com -> Klik domain yang kalian gunakan)
@@ -16,7 +16,7 @@ let cachedProxyList = [];
 // Constant
 const APP_DOMAIN = `${serviceName}.${rootDomain}`;
 const PORTS = [443, 80];
-const PROTOCOLS = [reverse("najort"), reverse("sselv"), reverse("ss")];
+const PROTOCOLS = [reverse("najort"), reverse("sselv"), reverse("ss"), reverse("ssemv")];
 const KV_PROXY_URL = "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json";
 const PROXY_BANK_URL = "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/proxyList.txt";
 const DNS_SERVER_ADDRESS = "8.8.8.8";
@@ -133,28 +133,50 @@ function getAllConfig(request, hostName, proxyList, page = 0) {
       const proxies = [];
       for (const port of PORTS) {
         uri.port = port.toString();
-        uri.hash = `${i + 1} ${getFlagEmoji(country)} ${org} WS ${port == 443 ? "TLS" : "NTLS"} [${serviceName}]`;
+        const hashName = `${i + 1} ${getFlagEmoji(country)} ${org} WS ${port == 443 ? "TLS" : "NTLS"} [${serviceName}]`;
+		uri.hash = hashName;
+
         for (const protocol of PROTOCOLS) {
-          // Special exceptions
-          if (protocol === "ss") {
-            uri.username = btoa(`none:${uuid}`);
-            uri.searchParams.set(
-              "plugin",
-              `v2ray-plugin${
-                port == 80 ? "" : ";tls"
-              };mux=0;mode=websocket;path=/${proxyIP}-${proxyPort};host=${hostName}`
-            );
+          if (protocol === reverse("ssemv")) {
+            const vmessConfig = {
+              v: "2",
+              ps: hashName,
+              add: hostName,
+              port: port,
+              id: uuid,
+              aid: 0,
+              scy: "auto",
+              net: "ws",
+              type: "none",
+              host: hostName,
+              path: `/${proxyIP}-${proxyPort}`,
+              tls: port === 443 ? "tls" : "",
+              sni: hostName,
+            };
+            // FIX: Encode Unicode characters before btoa
+            const jsonString = JSON.stringify(vmessConfig);
+            const base64Config = btoa(unescape(encodeURIComponent(jsonString)));
+            proxies.push("vmess://" + base64Config);
           } else {
-            uri.username = uuid;
-            uri.searchParams.delete("plugin");
+            if (protocol === "ss") {
+              uri.username = btoa(`none:${uuid}`);
+              uri.searchParams.set(
+                "plugin",
+                `v2ray-plugin${
+                  port == 80 ? "" : ";tls"
+                };mux=0;mode=websocket;path=/${proxyIP}-${proxyPort};host=${hostName}`
+              );
+            } else {
+              uri.username = uuid;
+              uri.searchParams.delete("plugin");
+            }
+
+            uri.protocol = protocol;
+            uri.searchParams.set("security", port == 443 ? "tls" : "none");
+            uri.searchParams.set("sni", port == 80 && protocol == reverse("sselv") ? "" : hostName);
+
+            proxies.push(uri.toString());
           }
-
-          uri.protocol = protocol;
-          uri.searchParams.set("security", port == 443 ? "tls" : "none");
-          uri.searchParams.set("sni", port == 80 && protocol == reverse("sselv") ? "" : hostName);
-
-          // Build VPN URI
-          proxies.push(uri.toString());
         }
       }
       document.registerProxies(
@@ -168,13 +190,12 @@ function getAllConfig(request, hostName, proxyList, page = 0) {
       );
     }
 
-    // Build pagination
     document.addPageButton("Prev", `/sub/${page > 0 ? page - 1 : 0}`, page > 0 ? false : true);
     document.addPageButton("Next", `/sub/${page + 1}`, page < Math.floor(proxyList.length / 10) ? false : true);
 
     return document.build();
   } catch (error) {
-    return `An error occurred while generating the ${reverse("SSELV")} configurations. ${error}`;
+    return `An error occurred while generating the configurations. ${error}`;
   }
 }
 
@@ -184,17 +205,14 @@ export default {
       const url = new URL(request.url);
       const upgradeHeader = request.headers.get("Upgrade");
 
-      // Gateway check
       if (apiKey && apiEmail && accountID && zoneID) {
         isApiReady = true;
       }
 
-      // Handle proxy client
       if (upgradeHeader === "websocket") {
         const proxyMatch = url.pathname.match(/^\/(.+[:=-]\d+)$/);
 
         if (url.pathname.length == 3 || url.pathname.match(",")) {
-          // Contoh: /ID, /SG, dll
           const proxyKeys = url.pathname.replace("/", "").toUpperCase().split(",");
           const proxyKey = proxyKeys[Math.floor(Math.random() * proxyKeys.length)];
           const kvProxy = await getKVProxyList();
@@ -213,15 +231,12 @@ export default {
         const pageIndex = parseInt(page ? page[1] : "0");
         const hostname = request.headers.get("Host");
 
-        // Queries
         const countrySelect = url.searchParams.get("cc")?.split(",");
         const proxyBankUrl = url.searchParams.get("proxy-list") || env.PROXY_BANK_URL;
         let proxyList = (await getProxyList(proxyBankUrl)).filter((proxy) => {
-          // Filter proxies by Country
           if (countrySelect) {
             return countrySelect.includes(proxy.country);
           }
-
           return true;
         });
 
@@ -283,14 +298,12 @@ export default {
           const proxyBankUrl = url.searchParams.get("proxy-list") || env.PROXY_BANK_URL;
           const proxyList = await getProxyList(proxyBankUrl)
             .then((proxies) => {
-              // Filter CC
               if (filterCC.length) {
                 return proxies.filter((proxy) => filterCC.includes(proxy.country));
               }
               return proxies;
             })
             .then((proxies) => {
-              // shuffle result
               shuffleArray(proxies);
               return proxies;
             });
@@ -306,6 +319,31 @@ export default {
             for (const port of filterPort) {
               for (const protocol of filterVPN) {
                 if (result.length >= filterLimit) break;
+				
+				const hashName = `${result.length + 1} ${getFlagEmoji(proxy.country)} ${proxy.org} WS ${ port == 443 ? "TLS" : "NTLS" } [${serviceName}]`;
+
+                if (protocol === reverse("ssemv")) {
+                  const vmessConfig = {
+                    v: "2",
+                    ps: hashName,
+                    add: fillerDomain,
+                    port: port,
+                    id: uuid,
+                    aid: 0,
+                    scy: "auto",
+                    net: "ws",
+                    type: "none",
+                    host: APP_DOMAIN,
+                    path: `/${proxy.proxyIP}-${proxy.proxyPort}`,
+                    tls: port == 443 ? "tls" : "",
+                    sni: APP_DOMAIN,
+                  };
+                  // FIX: Encode Unicode characters before btoa
+                  const jsonString = JSON.stringify(vmessConfig);
+                  const base64Config = btoa(unescape(encodeURIComponent(jsonString)));
+                  result.push("vmess://" + base64Config);
+                  continue;
+                }
 
                 uri.protocol = protocol;
                 uri.port = port.toString();
@@ -319,15 +357,14 @@ export default {
                   );
                 } else {
                   uri.username = uuid;
+				  uri.searchParams.delete("plugin");
                 }
 
                 uri.searchParams.set("security", port == 443 ? "tls" : "none");
                 uri.searchParams.set("sni", port == 80 && protocol == reverse("sselv") ? "" : APP_DOMAIN);
                 uri.searchParams.set("path", `/${proxy.proxyIP}-${proxy.proxyPort}`);
 
-                uri.hash = `${result.length + 1} ${getFlagEmoji(proxy.country)} ${proxy.org} WS ${
-                  port == 443 ? "TLS" : "NTLS"
-                } [${serviceName}]`;
+                uri.hash = hashName;
                 result.push(uri.toString());
               }
             }
@@ -444,6 +481,8 @@ async function websocketHandler(request) {
             protocolHeader = parseNajortHeader(chunk);
           } else if (protocol === reverse("SSELV")) {
             protocolHeader = parseSselvHeader(chunk);
+          } else if (protocol === reverse("ssemv")) { // Vmess
+            protocolHeader = parseVmessHeader(chunk);
           } else if (protocol === reverse("skcoswodahS")) {
             protocolHeader = parseSsHeader(chunk);
           } else {
@@ -461,7 +500,6 @@ async function websocketHandler(request) {
             if (protocolHeader.portRemote === 53) {
               isDNS = true;
             } else {
-              // return handleUDPOutbound(protocolHeader.addressRemote, protocolHeader.portRemote, chunk, webSocket, protocolHeader.version, log);
               throw new Error("UDP only support for DNS port 53");
             }
           }
@@ -517,13 +555,18 @@ async function protocolSniffer(buffer) {
     }
   }
 
-  const sselvDelimiter = new Uint8Array(buffer.slice(1, 17));
-  // Hanya mendukung UUID v4
-  if (arrayBufferToHex(sselvDelimiter).match(/^[0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12}$/i)) {
-    return reverse("SSELV");
+  if (buffer.byteLength > 17) {
+    const version = new Uint8Array(buffer.slice(0, 1))[0];
+    const uuidSlice = buffer.slice(1, 17);
+    if (arrayBufferToHex(uuidSlice).match(/^[0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12}$/i)) {
+      if (version === 0) {
+        return reverse("SSELV");
+      }
+      return reverse("ssemv");
+    }
   }
 
-  return reverse("skcoswodahS"); // default
+  return reverse("skcoswodahS");
 }
 
 async function handleTCPOutBound(
@@ -545,7 +588,6 @@ async function handleTCPOutBound(
     const writer = tcpSocket.writable.getWriter();
     await writer.write(rawClientData);
     writer.releaseLock();
-
     return tcpSocket;
   }
 
@@ -708,6 +750,76 @@ function parseSsHeader(ssBuffer) {
   };
 }
 
+function parseVmessHeader(buffer) {
+  const version = new Uint8Array(buffer.slice(0, 1));
+  const optLength = new Uint8Array(buffer.slice(17, 18))[0];
+  const cmd = new Uint8Array(buffer.slice(18 + optLength, 18 + optLength + 1))[0];
+  let isUDP = false;
+
+  if (cmd === 1) {
+  } else if (cmd === 2) {
+    isUDP = true;
+  } else {
+    return {
+      hasError: true,
+      message: `command ${cmd} is not supported in Vmess`,
+    };
+  }
+  const portIndex = 18 + optLength + 1;
+  const portBuffer = buffer.slice(portIndex, portIndex + 2);
+  const portRemote = new DataView(portBuffer).getUint16(0);
+
+  let addressIndex = portIndex + 2;
+  const addressBuffer = new Uint8Array(buffer.slice(addressIndex, addressIndex + 1));
+
+  const addressType = addressBuffer[0];
+  let addressLength = 0;
+  let addressValueIndex = addressIndex + 1;
+  let addressValue = "";
+  switch (addressType) {
+    case 1:
+      addressLength = 4;
+      addressValue = new Uint8Array(buffer.slice(addressValueIndex, addressValueIndex + addressLength)).join(".");
+      break;
+    case 2:
+      addressLength = new Uint8Array(buffer.slice(addressValueIndex, addressValueIndex + 1))[0];
+      addressValueIndex += 1;
+      addressValue = new TextDecoder().decode(buffer.slice(addressValueIndex, addressValueIndex + addressLength));
+      break;
+    case 3:
+      addressLength = 16;
+      const dataView = new DataView(buffer.slice(addressValueIndex, addressValueIndex + addressLength));
+      const ipv6 = [];
+      for (let i = 0; i < 8; i++) {
+        ipv6.push(dataView.getUint16(i * 2).toString(16));
+      }
+      addressValue = ipv6.join(":");
+      break;
+    default:
+      return {
+        hasError: true,
+        message: `invalid addressType in Vmess: ${addressType}`,
+      };
+  }
+  if (!addressValue) {
+    return {
+      hasError: true,
+      message: `address is empty in Vmess, addressType is ${addressType}`,
+    };
+  }
+
+  return {
+    hasError: false,
+    addressRemote: addressValue,
+    addressType: addressType,
+    portRemote: portRemote,
+    rawDataIndex: addressValueIndex + addressLength,
+    rawClientData: buffer.slice(addressValueIndex + addressLength),
+    version: new Uint8Array([version[0], 0]),
+    isUDP: isUDP,
+  };
+}
+
 function parseSselvHeader(buffer) {
   const version = new Uint8Array(buffer.slice(0, 1));
   let isUDP = false;
@@ -736,16 +848,16 @@ function parseSselvHeader(buffer) {
   let addressValueIndex = addressIndex + 1;
   let addressValue = "";
   switch (addressType) {
-    case 1: // For IPv4
+    case 1:
       addressLength = 4;
       addressValue = new Uint8Array(buffer.slice(addressValueIndex, addressValueIndex + addressLength)).join(".");
       break;
-    case 2: // For Domain
+    case 2:
       addressLength = new Uint8Array(buffer.slice(addressValueIndex, addressValueIndex + 1))[0];
       addressValueIndex += 1;
       addressValue = new TextDecoder().decode(buffer.slice(addressValueIndex, addressValueIndex + addressLength));
       break;
-    case 3: // For IPv6
+    case 3:
       addressLength = 16;
       const dataView = new DataView(buffer.slice(addressValueIndex, addressValueIndex + addressLength));
       const ipv6 = [];
@@ -802,20 +914,20 @@ function parseNajortHeader(buffer) {
   let addressValueIndex = 2;
   let addressValue = "";
   switch (addressType) {
-    case 1: // For IPv4
+    case 1:
       addressLength = 4;
       addressValue = new Uint8Array(socks5DataBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join(
         "."
       );
       break;
-    case 3: // For Domain
+    case 3:
       addressLength = new Uint8Array(socks5DataBuffer.slice(addressValueIndex, addressValueIndex + 1))[0];
       addressValueIndex += 1;
       addressValue = new TextDecoder().decode(
         socks5DataBuffer.slice(addressValueIndex, addressValueIndex + addressLength)
       );
       break;
-    case 4: // For IPv6
+    case 4:
       addressLength = 16;
       const dataView = new DataView(socks5DataBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
       const ipv6 = [];
@@ -852,39 +964,6 @@ function parseNajortHeader(buffer) {
     isUDP: isUDP,
   };
 }
-
-// function parseSsemvHeader(buffer) {
-//   const date = new Date(new Date().toLocaleString("en", { timeZone: "Asia/Jakarta" }));
-//   console.log(`Date: ${date}`);
-//   console.log(`First 16 bytes: ${arrayBufferToHex(buffer.slice(0, 17))}`);
-//   console.log(`Remaining bytes: ${arrayBufferToHex(buffer.slice(17))}`);
-
-//   // ===== KEY GENERATION =====
-//   const userId = "3b670322-6ac1-41ec-9ff3-714245d41bf7";
-//   const uuidConst = "c48619fe-8f02-49e0-b9e9-edf763e17e21";
-
-//   // Step 1: Generate AES key
-//   const key = createHash("md5")
-//     .update(userId + uuidConst)
-//     .digest();
-//   console.log(`KEY: ${key}`);
-
-//   // Step 2: Generate Timestamp (current Unix time)
-//   const timestamp = Math.floor(date.getTime() / 1000); // current timestamp in seconds
-
-//   // Step 3: Generate IV from Timestamp
-//   const x = Buffer.alloc(8);
-//   x.writeBigUInt64BE(BigInt(timestamp)); // 8-byte timestamp (Big Endian)
-//   const iv_source = Buffer.concat([x, x, x, x]);
-//   const iv = createHash("md5").update(iv_source).digest();
-//   console.log(`IV: ${iv}`);
-
-//   // Step 4: Decrypt using AES-128-CFB
-//   const decipher = createDecipheriv("aes-128-cfb", key, iv);
-//   const decrypted = Buffer.concat([decipher.update(buffer.slice(17)), decipher.final()]);
-
-//   console.log(`Decrypted Header: ${decrypted.toString("hex")}`);
-// }
 
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
   let header = responseHeader;
@@ -938,7 +1017,6 @@ async function checkProxyHealth(proxyIP, proxyPort) {
   return await req.json();
 }
 
-// Helpers
 function base64ToArrayBuffer(base64Str) {
   if (!base64Str) {
     return { error: null };
@@ -959,25 +1037,11 @@ function arrayBufferToHex(buffer) {
 
 function shuffleArray(array) {
   let currentIndex = array.length;
-
-  // While there remain elements to shuffle...
   while (currentIndex != 0) {
-    // Pick a remaining element...
     let randomIndex = Math.floor(Math.random() * currentIndex);
     currentIndex--;
-
-    // And swap it with the current element.
     [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
   }
-}
-
-async function generateHashFromText(text) {
-  const msgUint8 = new TextEncoder().encode(text); // encode as (utf-8) Uint8Array
-  const hashBuffer = await crypto.subtle.digest("MD5", msgUint8); // hash the message
-  const hashArray = Array.from(new Uint8Array(hashBuffer)); // convert buffer to byte array
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join(""); // convert bytes to hex string
-
-  return hashHex;
 }
 
 function reverse(s) {
@@ -992,7 +1056,6 @@ function getFlagEmoji(isoCode) {
   return String.fromCodePoint(...codePoints);
 }
 
-// CloudflareApi Class
 class CloudflareApi {
   constructor() {
     this.bearer = `Bearer ${apiKey}`;
@@ -1069,11 +1132,6 @@ class CloudflareApi {
   }
 }
 
-// HTML page base
-/**
- * Cloudflare worker gak support DOM API, tetapi mereka menggunakan HTML Rewriter.
- * Tapi, karena kelihatannta repot kalo pake HTML Rewriter. Kita pake cara konfensional saja...
- */
 let baseHTML = `
 <!DOCTYPE html>
 <html lang="en" id="html" class="scroll-auto scrollbar-hide dark">
@@ -1083,15 +1141,12 @@ let baseHTML = `
     <title>Proxy List</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      /* For Webkit-based browsers (Chrome, Safari and Opera) */
       .scrollbar-hide::-webkit-scrollbar {
           display: none;
       }
-
-      /* For IE, Edge and Firefox */
       .scrollbar-hide {
-          -ms-overflow-style: none;  /* IE and Edge */
-          scrollbar-width: none;  /* Firefox */
+          -ms-overflow-style: none;
+          scrollbar-width: none;
       }
     </style>
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/lozad/dist/lozad.min.js"></script>
@@ -1102,7 +1157,6 @@ let baseHTML = `
     </script>
   </head>
   <body class="bg-white dark:bg-neutral-800 bg-fixed">
-    <!-- Notification -->
     <div
       id="notification-badge"
       class="fixed z-50 opacity-0 transition-opacity ease-in-out duration-300 mt-9 mr-6 right-0 p-3 max-w-sm bg-white rounded-xl border border-2 border-neutral-800 flex items-center gap-x-4"
@@ -1124,7 +1178,6 @@ let baseHTML = `
         <p class="text-sm text-neutral-800">Akun berhasil disalin</p>
       </div>
     </div>
-    <!-- Select Country -->
     <div>
       <div
         class="h-full fixed top-0 w-14 bg-white dark:bg-neutral-800 border-r-2 border-neutral-800 dark:border-white z-20 overflow-y-scroll scrollbar-hide"
@@ -1134,7 +1187,6 @@ let baseHTML = `
         </div>
       </div>
     </div>
-    <!-- Main -->
     <div id="container-header">
       <div id="container-info" class="bg-amber-400 border-2 border-neutral-800 text-right px-5">
         <div class="flex justify-end gap-3 text-sm">
@@ -1156,8 +1208,6 @@ let baseHTML = `
       <div class="flex gap-6 pt-10 w-screen justify-center">
         PLACEHOLDER_PROXY_GROUP
       </div>
-
-      <!-- Pagination -->
       <nav id="container-pagination" class="w-screen mt-8 sticky bottom-0 right-0 left-0 transition -translate-y-6 z-20">
         <ul class="flex justify-center space-x-4">
           PLACEHOLDER_PAGE_BUTTON
@@ -1166,12 +1216,9 @@ let baseHTML = `
     </div>
 
     <div id="container-window" class="hidden">
-      <!-- Windows -->
-      <!-- Informations -->
       <div class="fixed z-20 top-0 w-full h-full bg-white dark:bg-neutral-800">
         <p id="container-window-info" class="text-center w-full h-full top-1/4 absolute dark:text-white"></p>
       </div>
-      <!-- Output Format -->
       <div id="output-window" class="fixed z-20 top-0 right-0 w-full h-full flex justify-center items-center hidden">
         <div class="w-[75%] h-[30%] flex flex-col gap-1 p-1 text-center rounded-md">
           <div class="basis-1/6 w-full h-full rounded-md">
@@ -1224,7 +1271,6 @@ let baseHTML = `
           </div>
         </div>
       </div>
-      <!-- Wildcards -->
       <div id="wildcards-window" class="fixed hidden z-20 top-0 right-0 w-full h-full flex justify-center items-center">
         <div class="w-[75%] h-[30%] flex flex-col gap-1 p-1 text-center rounded-md">
           <div class="basis-1/6 w-full h-full rounded-md">
@@ -1311,7 +1357,6 @@ let baseHTML = `
     </footer>
 
     <script>
-      // Shared
       const rootDomain = "${serviceName}.${rootDomain}";
       const notification = document.getElementById("notification-badge");
       const windowContainer = document.getElementById("container-window");
@@ -1319,24 +1364,17 @@ let baseHTML = `
       const converterUrl =
         "https://script.google.com/macros/s/AKfycbwwVeHNUlnP92syOP82p1dOk_-xwBgRIxkTjLhxxZ5UXicrGOEVNc5JaSOu0Bgsx_gG/exec";
 
-
-      // Switches
       let isDomainListFetched = false;
-
-      // Local variable
       let rawConfig = "";
 
       function getDomainList() {
         if (isDomainListFetched) return;
         isDomainListFetched = true;
-
         windowInfoContainer.innerText = "Fetching data...";
-
         const url = "https://" + rootDomain + "/api/v1/domains/get";
-        const res = fetch(url).then(async (res) => {
+        fetch(url).then(async (res) => {
           const domainListContainer = document.getElementById("container-domains");
           domainListContainer.innerHTML = "";
-
           if (res.status == 200) {
             windowInfoContainer.innerText = "Done!";
             const respJson = await res.json();
@@ -1356,16 +1394,13 @@ let baseHTML = `
         const domainInputElement = document.getElementById("new-domain-input");
         const rawDomain = domainInputElement.value.toLowerCase();
         const domain = domainInputElement.value + "." + rootDomain;
-
         if (!rawDomain.match(/\\w+\\.\\w+$/) || rawDomain.endsWith(rootDomain)) {
           windowInfoContainer.innerText = "Invalid URL!";
           return;
         }
-
         windowInfoContainer.innerText = "Pushing request...";
-
         const url = "https://" + rootDomain + "/api/v1/domains/put?domain=" + domain;
-        const res = fetch(url).then((res) => {
+        fetch(url).then((res) => {
           if (res.status == 200) {
             windowInfoContainer.innerText = "Done!";
             domainInputElement.value = "";
@@ -1388,7 +1423,6 @@ let baseHTML = `
 
       function copyToClipboardAsRaw() {
         navigator.clipboard.writeText(rawConfig);
-
         notification.classList.remove("opacity-0");
         setTimeout(() => {
           notification.classList.add("opacity-0");
@@ -1406,11 +1440,9 @@ let baseHTML = `
             template: "cf",
           }),
         });
-
         if (res.status == 200) {
           windowInfoContainer.innerText = "Done!";
           navigator.clipboard.writeText(await res.text());
-
           notification.classList.remove("opacity-0");
           setTimeout(() => {
             notification.classList.add("opacity-0");
@@ -1468,17 +1500,15 @@ let baseHTML = `
         for (let i = 0; ; i++) {
           const pingElement = document.getElementById("ping-"+i);
           if (pingElement == undefined) return;
-
           const target = pingElement.textContent.split(" ").filter((ipPort) => ipPort.match(":"))[0];
           if (target) {
             pingElement.textContent = "Checking...";
           } else {
             continue;
           }
-
           let isActive = false;
           new Promise(async (resolve) => {
-            const res = await fetch("https://${serviceName}.${rootDomain}/check?target=" + target)
+            await fetch("https://${serviceName}.${rootDomain}/check?target=" + target)
               .then(async (res) => {
                 if (isActive) return;
                 if (res.status == 200) {
@@ -1503,31 +1533,11 @@ let baseHTML = `
         }
       }
 
-      function checkRegion() {
-        for (let i = 0; ; i++) {
-          console.log("Halo " + i)
-          const containerRegionCheck = document.getElementById("container-region-check-" + i);
-          const configSample = document.getElementById("config-sample-" + i).value.replaceAll(" ", "");
-          if (containerRegionCheck == undefined) break;
-
-          const res = fetch(
-            "https://api.foolvpn.me/regioncheck?config=" + encodeURIComponent(configSample)
-          ).then(async (res) => {
-            if (res.status == 200) {
-              containerRegionCheck.innerHTML = "<hr>";
-              for (const result of await res.json()) {
-                containerRegionCheck.innerHTML += "<p>" + result.name + ": " + result.region + "</p>";
-              }
-            }
-          });
-        }
-      }
-
       function checkGeoip() {
         const containerIP = document.getElementById("container-info-ip");
         const containerCountry = document.getElementById("container-info-country");
         const containerISP = document.getElementById("container-info-isp");
-        const res = fetch("https://" + rootDomain + "/api/v1/myip").then(async (res) => {
+        fetch("https://" + rootDomain + "/api/v1/myip").then(async (res) => {
           if (res.status == 200) {
             const respJson = await res.json();
             containerIP.innerText = "IP: " + respJson.ip;
@@ -1540,8 +1550,6 @@ let baseHTML = `
       window.onload = () => {
         checkGeoip();
         checkProxy();
-        // checkRegion();
-
         const observer = lozad(".lozad", {
           load: function (el) {
             el.classList.remove("scale-95");
@@ -1552,7 +1560,6 @@ let baseHTML = `
 
       window.onscroll = () => {
         const paginationContainer = document.getElementById("container-pagination");
-
         if (window.innerHeight + Math.round(window.scrollY) >= document.body.offsetHeight) {
           paginationContainer.classList.remove("-translate-y-6");
         } else {
@@ -1561,7 +1568,6 @@ let baseHTML = `
       };
     </script>
     </body>
-
 </html>
 `;
 
@@ -1596,7 +1602,6 @@ class Document {
     for (let i = 0; i < this.proxies.length; i++) {
       const proxyData = this.proxies[i];
 
-      // Assign proxies
       proxyGroupElement += `<div class="lozad scale-95 mb-2 bg-white dark:bg-neutral-800 transition-transform duration-200 rounded-lg p-4 w-60 border-2 border-neutral-800">`;
       proxyGroupElement += `  <div id="countryFlag" class="absolute -translate-y-9 -translate-x-2 border-2 border-neutral-800 rounded-full overflow-hidden"><img width="32" src="https://hatscripts.github.io/circle-flags/flags/${proxyData.country.toLowerCase()}.svg" /></div>`;
       proxyGroupElement += `  <div>`;
@@ -1613,24 +1618,30 @@ class Document {
       proxyGroupElement += `    </div>`;
       proxyGroupElement += `  </div>`;
       proxyGroupElement += `  <div class="flex flex-col gap-2 mt-3 text-sm">`;
-      for (let x = 0; x < proxyData.list.length; x++) {
-        const indexName = [
+      
+      const protocolsPerPort = PROTOCOLS.length;
+      const indexName = [
           `${reverse("NAJORT")} TLS`,
           `${reverse("SSELV")} TLS`,
           `${reverse("SS")} TLS`,
+          `${reverse("SSEMV")} TLS`,
           `${reverse("NAJORT")} NTLS`,
           `${reverse("SSELV")} NTLS`,
           `${reverse("SS")} NTLS`,
-        ];
+          `${reverse("SSEMV")} NTLS`,
+      ];
+
+      for (let x = 0; x < proxyData.list.length; x++) {
         const proxy = proxyData.list[x];
+        const buttonIndex = (x % (protocolsPerPort*2));
 
         if (x % 2 == 0) {
           proxyGroupElement += `<div class="flex gap-2 justify-around w-full">`;
         }
 
-        proxyGroupElement += `<button class="bg-blue-500 dark:bg-neutral-800 dark:border-2 dark:border-blue-500 rounded p-1 w-full text-white" onclick="copyToClipboard('${proxy}')">${indexName[x]}</button>`;
+        proxyGroupElement += `<button class="bg-blue-500 dark:bg-neutral-800 dark:border-2 dark:border-blue-500 rounded p-1 w-full text-white" onclick="copyToClipboard('${proxy}')">${indexName[buttonIndex]}</button>`;
 
-        if (x % 2 == 1) {
+        if (x % 2 == 1 || x === proxyData.list.length - 1) {
           proxyGroupElement += `</div>`;
         }
       }
