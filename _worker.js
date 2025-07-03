@@ -35,6 +35,11 @@ const CORS_HEADER_OPTIONS = {
   "Access-Control-Max-Age": "86400",
 };
 
+// Helper function to handle Unicode characters in btoa
+function btoa_utf8(str) {
+    return btoa(unescape(encodeURIComponent(str)));
+}
+
 async function getKVProxyList(kvProxyUrl = KV_PROXY_URL) {
   if (!kvProxyUrl) {
     throw new Error("No KV Proxy URL Provided!");
@@ -49,13 +54,6 @@ async function getKVProxyList(kvProxyUrl = KV_PROXY_URL) {
 }
 
 async function getProxyList(proxyBankUrl = PROXY_BANK_URL) {
-  /**
-   * Format:
-   *
-   * <IP>,<Port>,<Country ID>,<ORG>
-   * Contoh:
-   * 1.1.1.1,443,SG,Cloudflare Inc.
-   */
   if (!proxyBankUrl) {
     throw new Error("No Proxy Bank URL Provided!");
   }
@@ -110,13 +108,11 @@ function getAllConfig(request, hostName, proxyList, page = 0) {
   try {
     const uuid = crypto.randomUUID();
 
-    // Build URI
     const uri = new URL(`${reverse("najort")}://${hostName}`);
     uri.searchParams.set("encryption", "none");
     uri.searchParams.set("type", "ws");
     uri.searchParams.set("host", hostName);
 
-    // Build HTML
     const document = new Document(request);
     document.setTitle("Welcome to <span class='text-blue-500 font-semibold'>Nautica</span>");
     document.addInfo(`Total: ${proxyList.length}`);
@@ -142,9 +138,9 @@ function getAllConfig(request, hostName, proxyList, page = 0) {
               v: "2",
               ps: hashName,
               add: hostName,
-              port: port,
+              port: port.toString(), // FIX: Ensure port is a string
               id: uuid,
-              aid: 0,
+              aid: "0", // FIX: Ensure aid is a string
               scy: "auto",
               net: "ws",
               type: "none",
@@ -153,18 +149,13 @@ function getAllConfig(request, hostName, proxyList, page = 0) {
               tls: port === 443 ? "tls" : "",
               sni: hostName,
             };
-            // FIX: Encode Unicode characters before btoa
-            const jsonString = JSON.stringify(vmessConfig);
-            const base64Config = btoa(unescape(encodeURIComponent(jsonString)));
-            proxies.push("vmess://" + base64Config);
+            proxies.push("vmess://" + btoa_utf8(JSON.stringify(vmessConfig)));
           } else {
             if (protocol === "ss") {
               uri.username = btoa(`none:${uuid}`);
               uri.searchParams.set(
                 "plugin",
-                `v2ray-plugin${
-                  port == 80 ? "" : ";tls"
-                };mux=0;mode=websocket;path=/${proxyIP}-${proxyPort};host=${hostName}`
+                `v2ray-plugin${port == 80 ? "" : ";tls"};mux=0;mode=websocket;path=/${proxyIP}-${proxyPort};host=${hostName}`
               );
             } else {
               uri.username = uuid;
@@ -180,12 +171,7 @@ function getAllConfig(request, hostName, proxyList, page = 0) {
         }
       }
       document.registerProxies(
-        {
-          proxyIP,
-          proxyPort,
-          country,
-          org,
-        },
+        { proxyIP, proxyPort, country, org },
         proxies
       );
     }
@@ -195,7 +181,7 @@ function getAllConfig(request, hostName, proxyList, page = 0) {
 
     return document.build();
   } catch (error) {
-    return `An error occurred while generating the configurations. ${error}`;
+    return `An error occurred while generating the configurations: ${error}`;
   }
 }
 
@@ -216,9 +202,9 @@ export default {
           const proxyKeys = url.pathname.replace("/", "").toUpperCase().split(",");
           const proxyKey = proxyKeys[Math.floor(Math.random() * proxyKeys.length)];
           const kvProxy = await getKVProxyList();
-
-          proxyIP = kvProxy[proxyKey][Math.floor(Math.random() * kvProxy[proxyKey].length)];
-
+          if (kvProxy && kvProxy[proxyKey]) {
+            proxyIP = kvProxy[proxyKey][Math.floor(Math.random() * kvProxy[proxyKey].length)];
+          }
           return await websocketHandler(request);
         } else if (proxyMatch) {
           proxyIP = proxyMatch[1];
@@ -261,9 +247,7 @@ export default {
 
         if (apiPath.startsWith("/domains")) {
           if (!isApiReady) {
-            return new Response("Api not ready", {
-              status: 500,
-            });
+            return new Response("Api not ready", { status: 500 });
           }
 
           const wildcardApiPath = apiPath.replace("/domains", "");
@@ -271,21 +255,11 @@ export default {
 
           if (wildcardApiPath == "/get") {
             const domains = await cloudflareApi.getDomainList();
-            return new Response(JSON.stringify(domains), {
-              headers: {
-                ...CORS_HEADER_OPTIONS,
-              },
-            });
+            return new Response(JSON.stringify(domains), { headers: { ...CORS_HEADER_OPTIONS } });
           } else if (wildcardApiPath == "/put") {
             const domain = url.searchParams.get("domain");
             const register = await cloudflareApi.registerDomain(domain);
-
-            return new Response(register.toString(), {
-              status: register,
-              headers: {
-                ...CORS_HEADER_OPTIONS,
-              },
-            });
+            return new Response(register.toString(), { status: register, headers: { ...CORS_HEADER_OPTIONS } });
           }
         } else if (apiPath.startsWith("/sub")) {
           const filterCC = url.searchParams.get("cc")?.split(",") || [];
@@ -327,9 +301,9 @@ export default {
                     v: "2",
                     ps: hashName,
                     add: fillerDomain,
-                    port: port,
+                    port: port.toString(), // FIX: Ensure port is a string
                     id: uuid,
-                    aid: 0,
+                    aid: "0", // FIX: Ensure aid is a string
                     scy: "auto",
                     net: "ws",
                     type: "none",
@@ -338,10 +312,7 @@ export default {
                     tls: port == 443 ? "tls" : "",
                     sni: APP_DOMAIN,
                   };
-                  // FIX: Encode Unicode characters before btoa
-                  const jsonString = JSON.stringify(vmessConfig);
-                  const base64Config = btoa(unescape(encodeURIComponent(jsonString)));
-                  result.push("vmess://" + base64Config);
+                  result.push("vmess://" + btoa_utf8(JSON.stringify(vmessConfig)));
                   continue;
                 }
 
@@ -351,9 +322,7 @@ export default {
                   uri.username = btoa(`none:${uuid}`);
                   uri.searchParams.set(
                     "plugin",
-                    `v2ray-plugin${port == 80 ? "" : ";tls"};mux=0;mode=websocket;path=/${proxy.proxyIP}-${
-                      proxy.proxyPort
-                    };host=${APP_DOMAIN}`
+                    `v2ray-plugin${port == 80 ? "" : ";tls"};mux=0;mode=websocket;path=/${proxy.proxyIP}-${proxy.proxyPort};host=${APP_DOMAIN}`
                   );
                 } else {
                   uri.username = uuid;
@@ -363,7 +332,6 @@ export default {
                 uri.searchParams.set("security", port == 443 ? "tls" : "none");
                 uri.searchParams.set("sni", port == 80 && protocol == reverse("sselv") ? "" : APP_DOMAIN);
                 uri.searchParams.set("path", `/${proxy.proxyIP}-${proxy.proxyPort}`);
-
                 uri.hash = hashName;
                 result.push(uri.toString());
               }
@@ -376,53 +344,31 @@ export default {
               finalResult = result.join("\n");
               break;
             case "v2ray":
-              finalResult = btoa(result.join("\n"));
+              finalResult = btoa_utf8(result.join("\n"));
               break;
             case "clash":
             case "sfa":
             case "bfr":
               const res = await fetch(CONVERTER_URL, {
                 method: "POST",
-                body: JSON.stringify({
-                  url: result.join(","),
-                  format: filterFormat,
-                  template: "cf",
-                }),
+                body: JSON.stringify({ url: result.join(","), format: filterFormat, template: "cf" }),
               });
               if (res.status == 200) {
                 finalResult = await res.text();
               } else {
-                return new Response(res.statusText, {
-                  status: res.status,
-                  headers: {
-                    ...CORS_HEADER_OPTIONS,
-                  },
-                });
+                return new Response(res.statusText, { status: res.status, headers: { ...CORS_HEADER_OPTIONS } });
               }
               break;
           }
-
-          return new Response(finalResult, {
-            status: 200,
-            headers: {
-              ...CORS_HEADER_OPTIONS,
-            },
-          });
+          return new Response(finalResult, { status: 200, headers: { ...CORS_HEADER_OPTIONS } });
         } else if (apiPath.startsWith("/myip")) {
           return new Response(
             JSON.stringify({
-              ip:
-                request.headers.get("cf-connecting-ipv6") ||
-                request.headers.get("cf-connecting-ip") ||
-                request.headers.get("x-real-ip"),
+              ip: request.headers.get("cf-connecting-ipv6") || request.headers.get("cf-connecting-ip") || request.headers.get("x-real-ip"),
               colo: request.headers.get("cf-ray")?.split("-")[1],
               ...request.cf,
             }),
-            {
-              headers: {
-                ...CORS_HEADER_OPTIONS,
-              },
-            }
+            { headers: { ...CORS_HEADER_OPTIONS } }
           );
         }
       }
@@ -432,9 +378,7 @@ export default {
     } catch (err) {
       return new Response(`An error occurred: ${err.toString()}`, {
         status: 500,
-        headers: {
-          ...CORS_HEADER_OPTIONS,
-        },
+        headers: { ...CORS_HEADER_OPTIONS },
       });
     }
   },
@@ -443,7 +387,6 @@ export default {
 async function websocketHandler(request) {
   const webSocketPair = new WebSocketPair();
   const [client, webSocket] = Object.values(webSocketPair);
-
   webSocket.accept();
 
   let addressLog = "";
@@ -452,12 +395,8 @@ async function websocketHandler(request) {
     console.log(`[${addressLog}:${portLog}] ${info}`, event || "");
   };
   const earlyDataHeader = request.headers.get("sec-websocket-protocol") || "";
-
   const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
-
-  let remoteSocketWrapper = {
-    value: null,
-  };
+  let remoteSocketWrapper = { value: null };
   let isDNS = false;
 
   readableWebSocketStream
@@ -479,10 +418,8 @@ async function websocketHandler(request) {
 
           if (protocol === reverse("najorT")) {
             protocolHeader = parseNajortHeader(chunk);
-          } else if (protocol === reverse("SSELV")) {
+          } else if (protocol === reverse("sselv")) {
             protocolHeader = parseSselvHeader(chunk);
-          } else if (protocol === reverse("ssemv")) { // Vmess
-            protocolHeader = parseVmessHeader(chunk);
           } else if (protocol === reverse("skcoswodahS")) {
             protocolHeader = parseSsHeader(chunk);
           } else {
@@ -505,25 +442,10 @@ async function websocketHandler(request) {
           }
 
           if (isDNS) {
-            return handleUDPOutbound(
-              DNS_SERVER_ADDRESS,
-              DNS_SERVER_PORT,
-              chunk,
-              webSocket,
-              protocolHeader.version,
-              log
-            );
+            return handleUDPOutbound(DNS_SERVER_ADDRESS, DNS_SERVER_PORT, chunk, webSocket, protocolHeader.version, log);
           }
 
-          handleTCPOutBound(
-            remoteSocketWrapper,
-            protocolHeader.addressRemote,
-            protocolHeader.portRemote,
-            protocolHeader.rawClientData,
-            webSocket,
-            protocolHeader.version,
-            log
-          );
+          handleTCPOutBound(remoteSocketWrapper, protocolHeader.addressRemote, protocolHeader.portRemote, protocolHeader.rawClientData, webSocket, protocolHeader.version, log);
         },
         close() {
           log(`readableWebSocketStream is close`);
@@ -555,34 +477,19 @@ async function protocolSniffer(buffer) {
     }
   }
 
-  if (buffer.byteLength > 17) {
-    const version = new Uint8Array(buffer.slice(0, 1))[0];
-    const uuidSlice = buffer.slice(1, 17);
-    if (arrayBufferToHex(uuidSlice).match(/^[0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12}$/i)) {
-      if (version === 0) {
-        return reverse("SSELV");
-      }
-      return reverse("ssemv");
-    }
+  // This sniffer is simplified. It assumes any header with a valid UUID is VLESS/Vmess.
+  // The `parseSselvHeader` is compatible enough to handle both for tunneling purposes.
+  const sselvDelimiter = new Uint8Array(buffer.slice(1, 17));
+  if (arrayBufferToHex(sselvDelimiter).match(/^[0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12}$/i)) {
+    return reverse("sselv");
   }
 
-  return reverse("skcoswodahS");
+  return reverse("skcoswodahS"); // default
 }
 
-async function handleTCPOutBound(
-  remoteSocket,
-  addressRemote,
-  portRemote,
-  rawClientData,
-  webSocket,
-  responseHeader,
-  log
-) {
+async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawClientData, webSocket, responseHeader, log) {
   async function connectAndWrite(address, port) {
-    const tcpSocket = connect({
-      hostname: address,
-      port: port,
-    });
+    const tcpSocket = connect({ hostname: address, port: port });
     remoteSocket.value = tcpSocket;
     log(`connected to ${address}:${port}`);
     const writer = tcpSocket.writable.getWriter();
@@ -592,39 +499,27 @@ async function handleTCPOutBound(
   }
 
   async function retry() {
-    const tcpSocket = await connectAndWrite(
-      proxyIP.split(/[:=-]/)[0] || addressRemote,
-      proxyIP.split(/[:=-]/)[1] || portRemote
-    );
-    tcpSocket.closed
-      .catch((error) => {
-        console.log("retry tcpSocket closed error", error);
-      })
-      .finally(() => {
-        safeCloseWebSocket(webSocket);
-      });
+    const tcpSocket = await connectAndWrite(proxyIP.split(/[:=-]/)[0] || addressRemote, proxyIP.split(/[:=-]/)[1] || portRemote);
+    tcpSocket.closed.catch((error) => {
+      console.log("retry tcpSocket closed error", error);
+    }).finally(() => {
+      safeCloseWebSocket(webSocket);
+    });
     remoteSocketToWS(tcpSocket, webSocket, responseHeader, null, log);
   }
 
   const tcpSocket = await connectAndWrite(addressRemote, portRemote);
-
   remoteSocketToWS(tcpSocket, webSocket, responseHeader, retry, log);
 }
 
 async function handleUDPOutbound(targetAddress, targetPort, udpChunk, webSocket, responseHeader, log) {
   try {
     let protocolHeader = responseHeader;
-    const tcpSocket = connect({
-      hostname: targetAddress,
-      port: targetPort,
-    });
-
+    const tcpSocket = connect({ hostname: targetAddress, port: targetPort });
     log(`Connected to ${targetAddress}:${targetPort}`);
-
     const writer = tcpSocket.writable.getWriter();
     await writer.write(udpChunk);
     writer.releaseLock();
-
     await tcpSocket.readable.pipeTo(
       new WritableStream({
         async write(chunk) {
@@ -655,17 +550,12 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
   const stream = new ReadableStream({
     start(controller) {
       webSocketServer.addEventListener("message", (event) => {
-        if (readableStreamCancel) {
-          return;
-        }
-        const message = event.data;
-        controller.enqueue(message);
+        if (readableStreamCancel) return;
+        controller.enqueue(event.data);
       });
       webSocketServer.addEventListener("close", () => {
         safeCloseWebSocket(webSocketServer);
-        if (readableStreamCancel) {
-          return;
-        }
+        if (readableStreamCancel) return;
         controller.close();
       });
       webSocketServer.addEventListener("error", (err) => {
@@ -679,29 +569,23 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
         controller.enqueue(earlyData);
       }
     },
-
     pull(controller) {},
     cancel(reason) {
-      if (readableStreamCancel) {
-        return;
-      }
+      if (readableStreamCancel) return;
       log(`ReadableStream was canceled, due to ${reason}`);
       readableStreamCancel = true;
       safeCloseWebSocket(webSocketServer);
     },
   });
-
   return stream;
 }
 
 function parseSsHeader(ssBuffer) {
   const view = new DataView(ssBuffer);
-
   const addressType = view.getUint8(0);
   let addressLength = 0;
   let addressValueIndex = 1;
   let addressValue = "";
-
   switch (addressType) {
     case 1:
       addressLength = 4;
@@ -722,19 +606,11 @@ function parseSsHeader(ssBuffer) {
       addressValue = ipv6.join(":");
       break;
     default:
-      return {
-        hasError: true,
-        message: `Invalid addressType for ${reverse("skcoswodahS")}: ${addressType}`,
-      };
+      return { hasError: true, message: `Invalid addressType for ${reverse("skcoswodahS")}: ${addressType}` };
   }
-
   if (!addressValue) {
-    return {
-      hasError: true,
-      message: `Destination address empty, address type is: ${addressType}`,
-    };
+    return { hasError: true, message: `Destination address empty, address type is: ${addressType}` };
   }
-
   const portIndex = addressValueIndex + addressLength;
   const portBuffer = ssBuffer.slice(portIndex, portIndex + 2);
   const portRemote = new DataView(portBuffer).getUint16(0);
@@ -750,99 +626,21 @@ function parseSsHeader(ssBuffer) {
   };
 }
 
-function parseVmessHeader(buffer) {
-  const version = new Uint8Array(buffer.slice(0, 1));
-  const optLength = new Uint8Array(buffer.slice(17, 18))[0];
-  const cmd = new Uint8Array(buffer.slice(18 + optLength, 18 + optLength + 1))[0];
-  let isUDP = false;
-
-  if (cmd === 1) {
-  } else if (cmd === 2) {
-    isUDP = true;
-  } else {
-    return {
-      hasError: true,
-      message: `command ${cmd} is not supported in Vmess`,
-    };
-  }
-  const portIndex = 18 + optLength + 1;
-  const portBuffer = buffer.slice(portIndex, portIndex + 2);
-  const portRemote = new DataView(portBuffer).getUint16(0);
-
-  let addressIndex = portIndex + 2;
-  const addressBuffer = new Uint8Array(buffer.slice(addressIndex, addressIndex + 1));
-
-  const addressType = addressBuffer[0];
-  let addressLength = 0;
-  let addressValueIndex = addressIndex + 1;
-  let addressValue = "";
-  switch (addressType) {
-    case 1:
-      addressLength = 4;
-      addressValue = new Uint8Array(buffer.slice(addressValueIndex, addressValueIndex + addressLength)).join(".");
-      break;
-    case 2:
-      addressLength = new Uint8Array(buffer.slice(addressValueIndex, addressValueIndex + 1))[0];
-      addressValueIndex += 1;
-      addressValue = new TextDecoder().decode(buffer.slice(addressValueIndex, addressValueIndex + addressLength));
-      break;
-    case 3:
-      addressLength = 16;
-      const dataView = new DataView(buffer.slice(addressValueIndex, addressValueIndex + addressLength));
-      const ipv6 = [];
-      for (let i = 0; i < 8; i++) {
-        ipv6.push(dataView.getUint16(i * 2).toString(16));
-      }
-      addressValue = ipv6.join(":");
-      break;
-    default:
-      return {
-        hasError: true,
-        message: `invalid addressType in Vmess: ${addressType}`,
-      };
-  }
-  if (!addressValue) {
-    return {
-      hasError: true,
-      message: `address is empty in Vmess, addressType is ${addressType}`,
-    };
-  }
-
-  return {
-    hasError: false,
-    addressRemote: addressValue,
-    addressType: addressType,
-    portRemote: portRemote,
-    rawDataIndex: addressValueIndex + addressLength,
-    rawClientData: buffer.slice(addressValueIndex + addressLength),
-    version: new Uint8Array([version[0], 0]),
-    isUDP: isUDP,
-  };
-}
-
 function parseSselvHeader(buffer) {
   const version = new Uint8Array(buffer.slice(0, 1));
   let isUDP = false;
-
   const optLength = new Uint8Array(buffer.slice(17, 18))[0];
-
   const cmd = new Uint8Array(buffer.slice(18 + optLength, 18 + optLength + 1))[0];
-  if (cmd === 1) {
-  } else if (cmd === 2) {
+  if (cmd === 1) {} else if (cmd === 2) {
     isUDP = true;
   } else {
-    return {
-      hasError: true,
-      message: `command ${cmd} is not support, command 01-tcp,02-udp,03-mux`,
-    };
+    return { hasError: true, message: `command ${cmd} is not support, command 01-tcp,02-udp,03-mux` };
   }
   const portIndex = 18 + optLength + 1;
   const portBuffer = buffer.slice(portIndex, portIndex + 2);
   const portRemote = new DataView(portBuffer).getUint16(0);
-
   let addressIndex = portIndex + 2;
   const addressBuffer = new Uint8Array(buffer.slice(addressIndex, addressIndex + 1));
-
   const addressType = addressBuffer[0];
   let addressLength = 0;
   let addressValueIndex = addressIndex + 1;
@@ -867,18 +665,11 @@ function parseSselvHeader(buffer) {
       addressValue = ipv6.join(":");
       break;
     default:
-      return {
-        hasError: true,
-        message: `invild  addressType is ${addressType}`,
-      };
+      return { hasError: true, message: `invalid addressType is ${addressType}` };
   }
   if (!addressValue) {
-    return {
-      hasError: true,
-      message: `addressValue is empty, addressType is ${addressType}`,
-    };
+    return { hasError: true, message: `addressValue is empty, addressType is ${addressType}` };
   }
-
   return {
     hasError: false,
     addressRemote: addressValue,
@@ -894,12 +685,8 @@ function parseSselvHeader(buffer) {
 function parseNajortHeader(buffer) {
   const socks5DataBuffer = buffer.slice(58);
   if (socks5DataBuffer.byteLength < 6) {
-    return {
-      hasError: true,
-      message: "invalid SOCKS5 request data",
-    };
+    return { hasError: true, message: "invalid SOCKS5 request data" };
   }
-
   let isUDP = false;
   const view = new DataView(socks5DataBuffer);
   const cmd = view.getUint8(0);
@@ -908,7 +695,6 @@ function parseNajortHeader(buffer) {
   } else if (cmd != 1) {
     throw new Error("Unsupported command type!");
   }
-
   let addressType = view.getUint8(1);
   let addressLength = 0;
   let addressValueIndex = 2;
@@ -916,16 +702,12 @@ function parseNajortHeader(buffer) {
   switch (addressType) {
     case 1:
       addressLength = 4;
-      addressValue = new Uint8Array(socks5DataBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join(
-        "."
-      );
+      addressValue = new Uint8Array(socks5DataBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join(".");
       break;
     case 3:
       addressLength = new Uint8Array(socks5DataBuffer.slice(addressValueIndex, addressValueIndex + 1))[0];
       addressValueIndex += 1;
-      addressValue = new TextDecoder().decode(
-        socks5DataBuffer.slice(addressValueIndex, addressValueIndex + addressLength)
-      );
+      addressValue = new TextDecoder().decode(socks5DataBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
       break;
     case 4:
       addressLength = 16;
@@ -937,19 +719,11 @@ function parseNajortHeader(buffer) {
       addressValue = ipv6.join(":");
       break;
     default:
-      return {
-        hasError: true,
-        message: `invalid addressType is ${addressType}`,
-      };
+      return { hasError: true, message: `invalid addressType is ${addressType}` };
   }
-
   if (!addressValue) {
-    return {
-      hasError: true,
-      message: `address is empty, addressType is ${addressType}`,
-    };
+    return { hasError: true, message: `address is empty, addressType is ${addressType}` };
   }
-
   const portIndex = addressValueIndex + addressLength;
   const portBuffer = socks5DataBuffer.slice(portIndex, portIndex + 2);
   const portRemote = new DataView(portBuffer).getUint16(0);
@@ -1049,10 +823,7 @@ function reverse(s) {
 }
 
 function getFlagEmoji(isoCode) {
-  const codePoints = isoCode
-    .toUpperCase()
-    .split("")
-    .map((char) => 127397 + char.charCodeAt(0));
+  const codePoints = isoCode.toUpperCase().split("").map((char) => 127397 + char.charCodeAt(0));
   return String.fromCodePoint(...codePoints);
 }
 
@@ -1063,42 +834,29 @@ class CloudflareApi {
     this.zoneID = zoneID;
     this.apiEmail = apiEmail;
     this.apiKey = apiKey;
-
     this.headers = {
       Authorization: this.bearer,
       "X-Auth-Email": this.apiEmail,
       "X-Auth-Key": this.apiKey,
     };
   }
-
   async getDomainList() {
     const url = `https://api.cloudflare.com/client/v4/accounts/${this.accountID}/workers/domains`;
-    const res = await fetch(url, {
-      headers: {
-        ...this.headers,
-      },
-    });
-
+    const res = await fetch(url, { headers: { ...this.headers } });
     if (res.status == 200) {
       const respJson = await res.json();
-
       return respJson.result.filter((data) => data.service == serviceName).map((data) => data.hostname);
     }
-
     return [];
   }
-
   async registerDomain(domain) {
     domain = domain.toLowerCase();
     const registeredDomains = await this.getDomainList();
-
     if (!domain.endsWith(rootDomain)) return 400;
     if (registeredDomains.includes(domain)) return 409;
-
     try {
       const domainTest = await fetch(`https://${domain.replaceAll("." + APP_DOMAIN, "")}`);
       if (domainTest.status == 530) return domainTest.status;
-
       const badWordsListRes = await fetch(BAD_WORDS_LIST);
       if (badWordsListRes.status == 200) {
         const badWordsList = (await badWordsListRes.text()).split("\n");
@@ -1113,21 +871,12 @@ class CloudflareApi {
     } catch (e) {
       return 400;
     }
-
     const url = `https://api.cloudflare.com/client/v4/accounts/${this.accountID}/workers/domains`;
     const res = await fetch(url, {
       method: "PUT",
-      body: JSON.stringify({
-        environment: "production",
-        hostname: domain,
-        service: serviceName,
-        zone_id: this.zoneID,
-      }),
-      headers: {
-        ...this.headers,
-      },
+      body: JSON.stringify({ environment: "production", hostname: domain, service: serviceName, zone_id: this.zoneID }),
+      headers: { ...this.headers },
     });
-
     return res.status;
   }
 }
@@ -1141,37 +890,18 @@ let baseHTML = `
     <title>Proxy List</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-      }
-      .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-      }
+      .scrollbar-hide::-webkit-scrollbar { display: none; }
+      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/lozad/dist/lozad.min.js"></script>
     <script>
-      tailwind.config = {
-        darkMode: 'selector',
-      }
+      tailwind.config = { darkMode: 'selector' }
     </script>
   </head>
   <body class="bg-white dark:bg-neutral-800 bg-fixed">
-    <div
-      id="notification-badge"
-      class="fixed z-50 opacity-0 transition-opacity ease-in-out duration-300 mt-9 mr-6 right-0 p-3 max-w-sm bg-white rounded-xl border border-2 border-neutral-800 flex items-center gap-x-4"
-    >
+    <div id="notification-badge" class="fixed z-50 opacity-0 transition-opacity ease-in-out duration-300 mt-9 mr-6 right-0 p-3 max-w-sm bg-white rounded-xl border border-2 border-neutral-800 flex items-center gap-x-4">
       <div class="shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#171717" class="size-6">
-          <path
-            d="M5.85 3.5a.75.75 0 0 0-1.117-1 9.719 9.719 0 0 0-2.348 4.876.75.75 0 0 0 1.479.248A8.219 8.219 0 0 1 5.85 3.5ZM19.267 2.5a.75.75 0 1 0-1.118 1 8.22 8.22 0 0 1 1.987 4.124.75.75 0 0 0 1.48-.248A9.72 9.72 0 0 0 19.266 2.5Z"
-          />
-          <path
-            fill-rule="evenodd"
-            d="M12 2.25A6.75 6.75 0 0 0 5.25 9v.75a8.217 8.217 0 0 1-2.119 5.52.75.75 0 0 0 .298 1.206c1.544.57 3.16.99 4.831 1.243a3.75 3.75 0 1 0 7.48 0 24.583 24.583 0 0 0 4.83-1.244.75.75 0 0 0 .298-1.205 8.217 8.217 0 0 1-2.118-5.52V9A6.75 6.75 0 0 0 12 2.25ZM9.75 18c0-.034 0-.067.002-.1a25.05 25.05 0 0 0 4.496 0l.002.1a2.25 2.25 0 1 1-4.5 0Z"
-            clip-rule="evenodd"
-          />
-        </svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#171717" class="size-6"><path d="M5.85 3.5a.75.75 0 0 0-1.117-1 9.719 9.719 0 0 0-2.348 4.876.75.75 0 0 0 1.479.248A8.219 8.219 0 0 1 5.85 3.5ZM19.267 2.5a.75.75 0 1 0-1.118 1 8.22 8.22 0 0 1 1.987 4.124.75.75 0 0 0 1.48-.248A9.72 9.72 0 0 0 19.266 2.5Z" /><path fill-rule="evenodd" d="M12 2.25A6.75 6.75 0 0 0 5.25 9v.75a8.217 8.217 0 0 1-2.119 5.52.75.75 0 0 0 .298 1.206c1.544.57 3.16.99 4.831 1.243a3.75 3.75 0 1 0 7.48 0 24.583 24.583 0 0 0 4.83-1.244.75.75 0 0 0 .298-1.205 8.217 8.217 0 0 1-2.118-5.52V9A6.75 6.75 0 0 0 12 2.25ZM9.75 18c0-.034 0-.067.002-.1a25.05 25.05 0 0 0 4.496 0l.002.1a2.25 2.25 0 1 1-4.5 0Z" clip-rule="evenodd" /></svg>
       </div>
       <div>
         <div class="text-md font-bold text-blue-500">Berhasil!</div>
@@ -1179,12 +909,8 @@ let baseHTML = `
       </div>
     </div>
     <div>
-      <div
-        class="h-full fixed top-0 w-14 bg-white dark:bg-neutral-800 border-r-2 border-neutral-800 dark:border-white z-20 overflow-y-scroll scrollbar-hide"
-      >
-        <div class="text-2xl flex flex-col items-center h-full gap-2">
-          PLACEHOLDER_BENDERA_NEGARA
-        </div>
+      <div class="h-full fixed top-0 w-14 bg-white dark:bg-neutral-800 border-r-2 border-neutral-800 dark:border-white z-20 overflow-y-scroll scrollbar-hide">
+        <div class="text-2xl flex flex-col items-center h-full gap-2">PLACEHOLDER_BENDERA_NEGARA</div>
       </div>
     </div>
     <div id="container-header">
@@ -1197,24 +923,14 @@ let baseHTML = `
       </div>
     </div>
     <div class="container">
-      <div
-        id="container-title"
-        class="sticky bg-white dark:bg-neutral-800 border-b-2 border-neutral-800 dark:border-white z-10 py-6 w-screen"
-      >
-        <h1 class="text-xl text-center text-neutral-800 dark:text-white">
-          PLACEHOLDER_JUDUL
-        </h1>
+      <div id="container-title" class="sticky bg-white dark:bg-neutral-800 border-b-2 border-neutral-800 dark:border-white z-10 py-6 w-screen">
+        <h1 class="text-xl text-center text-neutral-800 dark:text-white">PLACEHOLDER_JUDUL</h1>
       </div>
-      <div class="flex gap-6 pt-10 w-screen justify-center">
-        PLACEHOLDER_PROXY_GROUP
-      </div>
+      <div class="flex gap-6 pt-10 w-screen justify-center">PLACEHOLDER_PROXY_GROUP</div>
       <nav id="container-pagination" class="w-screen mt-8 sticky bottom-0 right-0 left-0 transition -translate-y-6 z-20">
-        <ul class="flex justify-center space-x-4">
-          PLACEHOLDER_PAGE_BUTTON
-        </ul>
+        <ul class="flex justify-center space-x-4">PLACEHOLDER_PAGE_BUTTON</ul>
       </nav>
     </div>
-
     <div id="container-window" class="hidden">
       <div class="fixed z-20 top-0 w-full h-full bg-white dark:bg-neutral-800">
         <p id="container-window-info" class="text-center w-full h-full top-1/4 absolute dark:text-white"></p>
@@ -1223,50 +939,20 @@ let baseHTML = `
         <div class="w-[75%] h-[30%] flex flex-col gap-1 p-1 text-center rounded-md">
           <div class="basis-1/6 w-full h-full rounded-md">
             <div class="flex w-full h-full gap-1 justify-between">
-              <button
-                onclick="copyToClipboardAsTarget('clash')"
-                class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center"
-              >
-                Clash
-              </button>
-              <button
-                onclick="copyToClipboardAsTarget('sfa')"
-                class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center"
-              >
-                SFA
-              </button>
-              <button
-                onclick="copyToClipboardAsTarget('bfr')"
-                class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center"
-              >
-                BFR
-              </button>
+              <button onclick="copyToClipboardAsTarget('clash')" class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center">Clash</button>
+              <button onclick="copyToClipboardAsTarget('sfa')" class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center">SFA</button>
+              <button onclick="copyToClipboardAsTarget('bfr')" class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center">BFR</button>
             </div>
           </div>
           <div class="basis-1/6 w-full h-full rounded-md">
             <div class="flex w-full h-full gap-1 justify-between">
-              <button
-                onclick="copyToClipboardAsTarget('v2ray')"
-                class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center"
-              >
-                V2Ray/Xray
-              </button>
-              <button
-                onclick="copyToClipboardAsRaw()"
-                class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center"
-              >
-                Raw
-              </button>
+              <button onclick="copyToClipboardAsTarget('v2ray')" class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center">V2Ray/Xray</button>
+              <button onclick="copyToClipboardAsRaw()" class="basis-1/2 p-2 rounded-full bg-amber-400 flex justify-center items-center">Raw</button>
             </div>
           </div>
           <div class="basis-1/6 w-full h-full rounded-md">
             <div class="flex w-full h-full gap-1 justify-center">
-              <button
-                onclick="toggleOutputWindow()"
-                class="basis-1/2 border-2 border-indigo-400 hover:bg-indigo-400 dark:text-white p-2 rounded-full flex justify-center items-center"
-              >
-                Close
-              </button>
+              <button onclick="toggleOutputWindow()" class="basis-1/2 border-2 border-indigo-400 hover:bg-indigo-400 dark:text-white p-2 rounded-full flex justify-center items-center">Close</button>
             </div>
           </div>
         </div>
@@ -1275,98 +961,34 @@ let baseHTML = `
         <div class="w-[75%] h-[30%] flex flex-col gap-1 p-1 text-center rounded-md">
           <div class="basis-1/6 w-full h-full rounded-md">
             <div class="flex w-full h-full gap-1 justify-between">
-              <input
-                id="new-domain-input"
-                type="text"
-                placeholder="Input wildcard"
-                class="basis-11/12 w-full h-full px-6 rounded-md focus:outline-0"
-              />
-              <button
-                onclick="registerDomain()"
-                class="p-2 rounded-full bg-amber-400 flex justify-center items-center"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
-                  <path
-                    fill-rule="evenodd"
-                    d="M16.72 7.72a.75.75 0 0 1 1.06 0l3.75 3.75a.75.75 0 0 1 0 1.06l-3.75 3.75a.75.75 0 1 1-1.06-1.06l2.47-2.47H3a.75.75 0 0 1 0-1.5h16.19l-2.47-2.47a.75.75 0 0 1 0-1.06Z"
-                    clip-rule="evenodd"
-                  ></path>
-                </svg>
-              </button>
+              <input id="new-domain-input" type="text" placeholder="Input wildcard" class="basis-11/12 w-full h-full px-6 rounded-md focus:outline-0" />
+              <button onclick="registerDomain()" class="p-2 rounded-full bg-amber-400 flex justify-center items-center"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6"><path fill-rule="evenodd" d="M16.72 7.72a.75.75 0 0 1 1.06 0l3.75 3.75a.75.75 0 0 1 0 1.06l-3.75 3.75a.75.75 0 1 1-1.06-1.06l2.47-2.47H3a.75.75 0 0 1 0-1.5h16.19l-2.47-2.47a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"></path></svg></button>
             </div>
           </div>
           <div class="basis-5/6 w-full h-full rounded-md">
-            <div
-              id="container-domains"
-              class="w-full h-full rounded-md flex flex-col gap-1 overflow-scroll scrollbar-hide"
-            ></div>
+            <div id="container-domains" class="w-full h-full rounded-md flex flex-col gap-1 overflow-scroll scrollbar-hide"></div>
           </div>
         </div>
       </div>
     </div>
-
     <footer>
       <div class="fixed bottom-3 right-3 flex flex-col gap-1 z-50">
         <a href="${DONATE_LINK}" target="_blank">
-          <button class="bg-green-500 rounded-full border-2 border-neutral-800 p-1 block">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
-              <path
-                d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 0 1-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.323.152-.691.546-1.004ZM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 0 1-.921.42Z"
-              />
-              <path
-                fill-rule="evenodd"
-                d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v.816a3.836 3.836 0 0 0-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 0 1-.921-.421l-.879-.66a.75.75 0 0 0-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 0 0 1.5 0v-.81a4.124 4.124 0 0 0 1.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 0 0-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 0 0 .933-1.175l-.415-.33a3.836 3.836 0 0 0-1.719-.755V6Z"
-                clip-rule="evenodd"
-              />
-            </svg>
+          <button class="bg-green-500 rounded-full border-2 border-neutral-800 p-1 block"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6"><path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 0 1-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.323.152-.691.546-1.004ZM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 0 1-.921.42Z" /><path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v.816a3.836 3.836 0 0 0-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 0 1-.921-.421l-.879-.66a.75.75 0 0 0-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 0 0 1.5 0v-.81a4.124 4.124 0 0 0 1.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 0 0-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 0 0 .933-1.175l-.415-.33a3.836 3.836 0 0 0-1.719-.755V6Z" clip-rule="evenodd" /></svg>
           </button>
         </a>
-        <button onclick="toggleWildcardsWindow()" class="bg-indigo-400 rounded-full border-2 border-neutral-800 p-1 PLACEHOLDER_API_READY">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="size-6"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25"
-            />
-          </svg>
-        </button>
-        <button onclick="toggleDarkMode()" class="bg-amber-400 rounded-full border-2 border-neutral-800 p-1">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="size-6"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
-            ></path>
-          </svg>
-        </button>
+        <button onclick="toggleWildcardsWindow()" class="bg-indigo-400 rounded-full border-2 border-neutral-800 p-1 PLACEHOLDER_API_READY"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" /></svg></button>
+        <button onclick="toggleDarkMode()" class="bg-amber-400 rounded-full border-2 border-neutral-800 p-1"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"></path></svg></button>
       </div>
     </footer>
-
     <script>
       const rootDomain = "${serviceName}.${rootDomain}";
       const notification = document.getElementById("notification-badge");
       const windowContainer = document.getElementById("container-window");
       const windowInfoContainer = document.getElementById("container-window-info");
-      const converterUrl =
-        "https://script.google.com/macros/s/AKfycbwwVeHNUlnP92syOP82p1dOk_-xwBgRIxkTjLhxxZ5UXicrGOEVNc5JaSOu0Bgsx_gG/exec";
-
+      const converterUrl = "https://script.google.com/macros/s/AKfycbwwVeHNUlnP92syOP82p1dOk_-xwBgRIxkTjLhxxZ5UXicrGOEVNc5JaSOu0Bgsx_gG/exec";
       let isDomainListFetched = false;
       let rawConfig = "";
-
       function getDomainList() {
         if (isDomainListFetched) return;
         isDomainListFetched = true;
@@ -1389,7 +1011,6 @@ let baseHTML = `
           }
         });
       }
-
       function registerDomain() {
         const domainInputElement = document.getElementById("new-domain-input");
         const rawDomain = domainInputElement.value.toLowerCase();
@@ -1415,12 +1036,10 @@ let baseHTML = `
           }
         });
       }
-
       function copyToClipboard(text) {
         toggleOutputWindow();
         rawConfig = text;
       }
-
       function copyToClipboardAsRaw() {
         navigator.clipboard.writeText(rawConfig);
         notification.classList.remove("opacity-0");
@@ -1428,17 +1047,12 @@ let baseHTML = `
           notification.classList.add("opacity-0");
         }, 2000);
       }
-
       async function copyToClipboardAsTarget(target) {
         windowInfoContainer.innerText = "Generating config...";
         const url = "${CONVERTER_URL}";
         const res = await fetch(url, {
           method: "POST",
-          body: JSON.stringify({
-            url: rawConfig,
-            format: target,
-            template: "cf",
-          }),
+          body: JSON.stringify({ url: rawConfig, format: target, template: "cf" }),
         });
         if (res.status == 200) {
           windowInfoContainer.innerText = "Done!";
@@ -1451,11 +1065,9 @@ let baseHTML = `
           windowInfoContainer.innerText = "Error " + res.statusText;
         }
       }
-
       function navigateTo(link) {
         window.location.href = link + window.location.search;
       }
-
       function toggleOutputWindow() {
         windowInfoContainer.innerText = "Select output:";
         toggleWindow();
@@ -1466,7 +1078,6 @@ let baseHTML = `
           rootElement.classList.add("hidden");
         }
       }
-
       function toggleWildcardsWindow() {
         windowInfoContainer.innerText = "Domain list";
         toggleWindow();
@@ -1478,7 +1089,6 @@ let baseHTML = `
           rootElement.classList.add("hidden");
         }
       }
-
       function toggleWindow() {
         if (windowContainer.classList.contains("hidden")) {
           windowContainer.classList.remove("hidden");
@@ -1486,7 +1096,6 @@ let baseHTML = `
           windowContainer.classList.add("hidden");
         }
       }
-
       function toggleDarkMode() {
         const rootElement = document.getElementById("html");
         if (rootElement.classList.contains("dark")) {
@@ -1495,10 +1104,9 @@ let baseHTML = `
           rootElement.classList.add("dark");
         }
       }
-
       function checkProxy() {
         for (let i = 0; ; i++) {
-          const pingElement = document.getElementById("ping-"+i);
+          const pingElement = document.getElementById("ping-" + i);
           if (pingElement == undefined) return;
           const target = pingElement.textContent.split(" ").filter((ipPort) => ipPort.match(":"))[0];
           if (target) {
@@ -1508,7 +1116,7 @@ let baseHTML = `
           }
           let isActive = false;
           new Promise(async (resolve) => {
-            await fetch("https://${serviceName}.${rootDomain}/check?target=" + target)
+            await fetch("https://" + rootDomain + "/check?target=" + target)
               .then(async (res) => {
                 if (isActive) return;
                 if (res.status == 200) {
@@ -1532,7 +1140,6 @@ let baseHTML = `
           });
         }
       }
-
       function checkGeoip() {
         const containerIP = document.getElementById("container-info-ip");
         const containerCountry = document.getElementById("container-info-country");
@@ -1546,7 +1153,6 @@ let baseHTML = `
           }
         });
       }
-
       window.onload = () => {
         checkGeoip();
         checkProxy();
@@ -1557,7 +1163,6 @@ let baseHTML = `
         });
         observer.observe();
       };
-
       window.onscroll = () => {
         const paginationContainer = document.getElementById("container-pagination");
         if (window.innerHeight + Math.round(window.scrollY) >= document.body.offsetHeight) {
@@ -1567,123 +1172,77 @@ let baseHTML = `
         }
       };
     </script>
-    </body>
-</html>
-`;
+  </body>
+</html>`;
 
 class Document {
   proxies = [];
-
   constructor(request) {
     this.html = baseHTML;
     this.request = request;
     this.url = new URL(this.request.url);
   }
-
   setTitle(title) {
     this.html = this.html.replaceAll("PLACEHOLDER_JUDUL", title);
   }
-
   addInfo(text) {
     text = `<span>${text}</span>`;
     this.html = this.html.replaceAll("PLACEHOLDER_INFO", `${text}\nPLACEHOLDER_INFO`);
   }
-
   registerProxies(data, proxies) {
-    this.proxies.push({
-      ...data,
-      list: proxies,
-    });
+    this.proxies.push({ ...data, list: proxies });
   }
-
   buildProxyGroup() {
     let proxyGroupElement = "";
     proxyGroupElement += `<div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">`;
     for (let i = 0; i < this.proxies.length; i++) {
       const proxyData = this.proxies[i];
-
       proxyGroupElement += `<div class="lozad scale-95 mb-2 bg-white dark:bg-neutral-800 transition-transform duration-200 rounded-lg p-4 w-60 border-2 border-neutral-800">`;
       proxyGroupElement += `  <div id="countryFlag" class="absolute -translate-y-9 -translate-x-2 border-2 border-neutral-800 rounded-full overflow-hidden"><img width="32" src="https://hatscripts.github.io/circle-flags/flags/${proxyData.country.toLowerCase()}.svg" /></div>`;
-      proxyGroupElement += `  <div>`;
-      proxyGroupElement += `    <div id="ping-${i}" class="animate-pulse text-xs font-semibold dark:text-white">Idle ${proxyData.proxyIP}:${proxyData.proxyPort}</div>`;
-      proxyGroupElement += `  </div>`;
+      proxyGroupElement += `  <div><div id="ping-${i}" class="animate-pulse text-xs font-semibold dark:text-white">Idle ${proxyData.proxyIP}:${proxyData.proxyPort}</div></div>`;
       proxyGroupElement += `  <div class="rounded py-1 px-2 bg-amber-400 dark:bg-neutral-800 dark:border-2 dark:border-amber-400">`;
       proxyGroupElement += `    <h5 class="font-bold text-md text-neutral-900 dark:text-white mb-1 overflow-x-scroll scrollbar-hide text-nowrap">${proxyData.org}</h5>`;
-      proxyGroupElement += `    <div class="text-neutral-900 dark:text-white text-sm">`;
-      proxyGroupElement += `      <p>IP: ${proxyData.proxyIP}</p>`;
-      proxyGroupElement += `      <p>Port: ${proxyData.proxyPort}</p>`;
-      proxyGroupElement += `      <div id="container-region-check-${i}">`;
-      proxyGroupElement += `        <input id="config-sample-${i}" class="hidden" type="text" value="${proxyData.list[0]}">`;
-      proxyGroupElement += `      </div>`;
+      proxyGroupElement += `    <div class="text-neutral-900 dark:text-white text-sm"><p>IP: ${proxyData.proxyIP}</p><p>Port: ${proxyData.proxyPort}</p>`;
+      proxyGroupElement += `      <div id="container-region-check-${i}"><input id="config-sample-${i}" class="hidden" type="text" value="${proxyData.list[0]}"></div>`;
       proxyGroupElement += `    </div>`;
       proxyGroupElement += `  </div>`;
       proxyGroupElement += `  <div class="flex flex-col gap-2 mt-3 text-sm">`;
-      
-      const protocolsPerPort = PROTOCOLS.length;
       const indexName = [
-          `${reverse("NAJORT")} TLS`,
-          `${reverse("SSELV")} TLS`,
-          `${reverse("SS")} TLS`,
-          `${reverse("SSEMV")} TLS`,
-          `${reverse("NAJORT")} NTLS`,
-          `${reverse("SSELV")} NTLS`,
-          `${reverse("SS")} NTLS`,
-          `${reverse("SSEMV")} NTLS`,
+          `${reverse("NAJORT")} TLS`, `${reverse("SSELV")} TLS`, `${reverse("SS")} TLS`, `${reverse("SSEMV")} TLS`,
+          `${reverse("NAJORT")} NTLS`, `${reverse("SSELV")} NTLS`, `${reverse("SS")} NTLS`, `${reverse("SSEMV")} NTLS`,
       ];
-
       for (let x = 0; x < proxyData.list.length; x++) {
         const proxy = proxyData.list[x];
-        const buttonIndex = (x % (protocolsPerPort*2));
-
         if (x % 2 == 0) {
           proxyGroupElement += `<div class="flex gap-2 justify-around w-full">`;
         }
-
-        proxyGroupElement += `<button class="bg-blue-500 dark:bg-neutral-800 dark:border-2 dark:border-blue-500 rounded p-1 w-full text-white" onclick="copyToClipboard('${proxy}')">${indexName[buttonIndex]}</button>`;
-
+        proxyGroupElement += `<button class="bg-blue-500 dark:bg-neutral-800 dark:border-2 dark:border-blue-500 rounded p-1 w-full text-white" onclick="copyToClipboard('${proxy}')">${indexName[x]}</button>`;
         if (x % 2 == 1 || x === proxyData.list.length - 1) {
           proxyGroupElement += `</div>`;
         }
       }
-      proxyGroupElement += `  </div>`;
-      proxyGroupElement += `</div>`;
+      proxyGroupElement += `  </div></div>`;
     }
     proxyGroupElement += `</div>`;
-
     this.html = this.html.replaceAll("PLACEHOLDER_PROXY_GROUP", `${proxyGroupElement}`);
   }
-
   buildCountryFlag() {
     const proxyBankUrl = this.url.searchParams.get("proxy-list");
-    const flagList = [];
-    for (const proxy of cachedProxyList) {
-      flagList.push(proxy.country);
-    }
-
+    const flagList = [...new Set(cachedProxyList.map(p => p.country))];
     let flagElement = "";
-    for (const flag of new Set(flagList)) {
-      flagElement += `<a href="/sub?cc=${flag}${
-        proxyBankUrl ? "&proxy-list=" + proxyBankUrl : ""
-      }" class="py-1" ><img width=20 src="https://hatscripts.github.io/circle-flags/flags/${flag.toLowerCase()}.svg" /></a>`;
+    for (const flag of flagList) {
+      flagElement += `<a href="/sub?cc=${flag}${proxyBankUrl ? "&proxy-list=" + proxyBankUrl : ""}" class="py-1" ><img width=20 src="https://hatscripts.github.io/circle-flags/flags/${flag.toLowerCase()}.svg" /></a>`;
     }
-
     this.html = this.html.replaceAll("PLACEHOLDER_BENDERA_NEGARA", flagElement);
   }
-
   addPageButton(text, link, isDisabled) {
-    const pageButton = `<li><button ${
-      isDisabled ? "disabled" : ""
-    } class="px-3 py-1 bg-amber-400 border-2 border-neutral-800 rounded" onclick=navigateTo('${link}')>${text}</button></li>`;
-
+    const pageButton = `<li><button ${isDisabled ? "disabled" : ""} class="px-3 py-1 bg-amber-400 border-2 border-neutral-800 rounded" onclick=navigateTo('${link}')>${text}</button></li>`;
     this.html = this.html.replaceAll("PLACEHOLDER_PAGE_BUTTON", `${pageButton}\nPLACEHOLDER_PAGE_BUTTON`);
   }
-
   build() {
     this.buildProxyGroup();
     this.buildCountryFlag();
-
     this.html = this.html.replaceAll("PLACEHOLDER_API_READY", isApiReady ? "block" : "hidden");
-
     return this.html.replaceAll(/PLACEHOLDER_\w+/gim, "");
   }
 }
