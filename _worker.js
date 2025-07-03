@@ -3,7 +3,6 @@ import { connect } from "cloudflare:sockets";
 // import { Buffer } from "node:buffer";
 
 // Variables
-// Variables
 const rootDomain = "bangmajdi.dpdns.org"; // Ganti dengan domain utama kalian
 const serviceName = "tkc"; // Ganti dengan nama workers kalian
 const apiKey = "9bc4cdcb54a639efa7fc45d42726f4ef354cb"; // Ganti dengan Global API key kalian (https://dash.cloudflare.com/profile/api-tokens)
@@ -13,6 +12,7 @@ const zoneID = "d60b27b8f10f948154134dc7aaa259e9"; // Ganti dengan Zone ID kalia
 let isApiReady = false;
 let proxyIP = "";
 let cachedProxyList = [];
+
 // Constant
 const APP_DOMAIN = `${serviceName}.${rootDomain}`;
 const PORTS = [443, 80];
@@ -21,12 +21,12 @@ const KV_PROXY_URL = "https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/
 const PROXY_BANK_URL = "https://raw.githubusercontent.com/Mayumiwandi/Emilia/refs/heads/main/Data/alive.txt";
 const DNS_SERVER_ADDRESS = "8.8.8.8";
 const DNS_SERVER_PORT = 53;
-const PROXY_HEALTH_CHECK_API = "https://id1.foolvpn.me/api/v1/check";
+const PROXY_HEALTH_CHECK_API = "https://yumiproxy.vercel.app/api/v1";
 const CONVERTER_URL = "https://api.foolvpn.me/convert";
-const DONATE_LINK = "https://trakteer.id/dickymuliafiqri/tip";
+const DONATE_LINK = "https://trakteer.id/mayumiwandi/tip";
 const BAD_WORDS_LIST =
   "https://gist.githubusercontent.com/adierebel/a69396d79b787b84d89b45002cb37cd6/raw/6df5f8728b18699496ad588b3953931078ab9cf1/kata-kasar.txt";
-const PROXY_PER_PAGE = 24;
+const PROXY_PER_PAGE = 20;
 const WS_READY_STATE_OPEN = 1;
 const WS_READY_STATE_CLOSING = 2;
 const CORS_HEADER_OPTIONS = {
@@ -118,7 +118,7 @@ function getAllConfig(request, hostName, proxyList, page = 0) {
 
     // Build HTML
     const document = new Document(request);
-    document.setTitle("Welcome to <span class='text-blue-500 font-semibold'>Nautica</span>");
+    document.setTitle("Welcome to <span class='text-blue-500 font-semibold'>Bangjdi VPN</span>");
     document.addInfo(`Total: ${proxyList.length}`);
     document.addInfo(`Page: ${page}/${Math.floor(proxyList.length / PROXY_PER_PAGE)}`);
 
@@ -934,7 +934,7 @@ function safeCloseWebSocket(socket) {
 }
 
 async function checkProxyHealth(proxyIP, proxyPort) {
-  const req = await fetch(`${PROXY_HEALTH_CHECK_API}?ip=${proxyIP}:${proxyPort}`);
+  const req = await fetch(`${PROXY_HEALTH_CHECK_API}?ip=${proxyIP}&port=${proxyPort}`);
   return await req.json();
 }
 
@@ -1080,7 +1080,9 @@ let baseHTML = `
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Proxy List</title>
+    <title>Yumi - Proxy List</title>
+    <link rel="icon" type="image/x-icon"
+			href="https://github.com/user-attachments/assets/54516e96-2d3a-42d5-8621-3ced0d3e0ce7">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       /* For Webkit-based browsers (Chrome, Safari and Opera) */
@@ -1486,7 +1488,7 @@ let baseHTML = `
                   const jsonResp = await res.json();
                   if (jsonResp.proxyip === true) {
                     isActive = true;
-                    pingElement.textContent = "Active " + jsonResp.delay + " ms " + "(" + jsonResp.colo + ")";
+                    pingElement.textContent = "Active " + jsonResp.delay  + " "+"(" + jsonResp.colo + ")";
                     pingElement.classList.add("text-green-600");
                   } else {
                     pingElement.textContent = "Inactive";
